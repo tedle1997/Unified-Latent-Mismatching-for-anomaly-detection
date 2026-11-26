@@ -1,8 +1,10 @@
 # Unified Latents for Flow Mismatching Anomaly Detection
 
-Unsupervised anomaly detection combining **Unified Latents (UL)** with **Flow Mismatching**: train a UL encoder, $\sigma_0$-linked flow prior, and train-only diffusion decoder exclusively on normal images, **discard the decoder at test time**, and score anomalies via velocity discrepancies directly on the compact UL flow prior.
+Unsupervised anomaly detection combining **Unified Latents (UL)** with **Flow Mismatching**: train a UL encoder, $\sigma_0$-linked flow prior, and train-only diffusion decoder **from scratch exclusively on normal images**—without pretrained vision foundation backbones—**discard the decoder at test time**, and score anomalies via velocity discrepancies directly on the compact UL flow prior.
 
-> **Provenance:** This codebase builds directly on [ShengzheC/Flow-Mismatching](https://github.com/ShengzheC/Flow-Mismatching) (base commit `2519636`, [arXiv:2605.23070](https://arxiv.org/abs/2605.23070), NeurIPS 2026) and adds a PyTorch implementation of **Unified Latents (UL)** ([Heek et al., 2026, arXiv:2602.17270](https://arxiv.org/abs/2602.17270)) together with latent-space baselines (frozen SD-VAE, frozen DINOv2 + UL adapter) and bitrate/ELBO diagnostics.
+> **Project Proposal:** See [Proposal.md](Proposal.md) for the full research motivation, hypotheses, experimental design, and positioning relative to concurrent work (including Flownomaly).
+>
+> **Provenance:** This codebase builds directly on [ShengzheC/Flow-Mismatching](https://github.com/ShengzheC/Flow-Mismatching) (base commit `2519636`, [arXiv:2605.23070](https://arxiv.org/abs/2605.23070), NeurIPS 2026) and adds a PyTorch implementation of **Unified Latents (UL)** ([Heek et al., 2026, arXiv:2602.17270](https://arxiv.org/abs/2602.17270)) together with a frozen SD-VAE latent baseline and bitrate/ELBO diagnostics.
 
 ---
 
@@ -10,17 +12,16 @@ Unsupervised anomaly detection combining **Unified Latents (UL)** with **Flow Mi
 
 Pixel-space [Flow Mismatching](https://arxiv.org/abs/2605.23070) detects anomalies without test-time reconstruction or ODE integration by probing a learned velocity field $v_\theta(x_t, t)$ along $K$ straight affine paths and aggregating local squared velocity discrepancies. However, operating in `128×128×3` pixel space requires $K \times T = 100$ full-resolution U-Net forward passes per test image (~268 ms/image on an RTX 4090) and struggles on large structural/semantic anomalies.
 
-We extend Flow Mismatching into latent space using **Unified Latents (UL)**:
-- **Joint training on normal data only:** A deterministic encoder $E_\psi$ produces latents $z_{\text{clean}} = E_\psi(x)$ with fixed base noise $\sigma_0$ and log-SNR $\lambda_0 = \log\frac{1 - \sigma_0^2}{\sigma_0^2}$, regularized by an exact Flow-Matching prior ELBO on $t \in (0, t_1)$ with $t_1 = \mathrm{sigmoid}(\lambda_0 / 2)$, while a lightweight diffusion decoder $D_\omega$ reconstructs pixels via UL's sigmoid-weighted loss.
-- **Decoder-free test-time scoring:** At inference, $D_\omega$ is discarded. Test images are encoded once as $z = E_\psi(y)$ and scored directly on the compact latent flow prior $v_\theta$ using Flow Mismatching (`--aggregation min`) or raw UL prior ELBO (`--aggregation mean`), achieving **3.8×–7.7× faster inference**.
-- **Controlled comparisons:** Supports four unified modeling spaces (`--space`) under the exact same scoring engine and 7-metric evaluation harness:
+We extend Flow Mismatching into a **learned, bitrate-controlled latent space** using **Unified Latents (UL)** under strictly **label-free unified multi-class modeling (`--no-class_cond`)**:
+- **Joint training on normal data only (no foundation-model encoder):** A deterministic CNN encoder $E_\psi$ produces latents $z_{\text{clean}} = E_\psi(x)$ with fixed base noise $\sigma_0$ and log-SNR $\lambda_0 = \log\frac{1 - \sigma_0^2}{\sigma_0^2}$, regularized by an exact Flow-Matching prior ELBO on $t \in (0, t_1)$ with $t_1 = \mathrm{sigmoid}(\lambda_0 / 2)$, while a lightweight diffusion decoder $D_\omega$ reconstructs pixels via UL's sigmoid-weighted loss.
+- **Decoder-free test-time scoring:** At inference, $D_\omega$ is discarded. Test images are encoded once as $z = E_\psi(y)$ and scored directly on the compact 2D spatial latent flow prior $v_\theta$ using Flow Mismatching (`--aggregation min`) or raw UL prior ELBO (`--aggregation mean`), achieving **3.8×–7.7× faster inference**.
+- **Controlled comparisons:** Supports pixel-space, non-UL frozen latent, and UL-from-scratch modeling spaces (`--space`) under the exact same scoring engine and 7-metric evaluation harness:
 
 | Setup | `--space` | Latent Representation | Flow Prior | Test-Time Decoder |
 | --- | --- | --- | --- | --- |
 | **A0** (Baseline) | `pixel` | Pixel space (`128×128×3`) | 6-stage U-Net | None |
 | **A1** (Frozen VAE) | `vae` | Frozen SD-VAE (`32×32×4`, standardized) | 3-stage latent U-Net | None |
-| **B** (UL from scratch) | `ul` / `ul_stage2` | Learned UL encoder + fixed $\sigma_0$ (`32×32×8`) | Joint UL flow prior $v_\theta$ (or Stage-2 FM) | None; train-only $D_\omega$ |
-| **C** (Semantic UL) | `ul_dino` | Frozen DINOv2 ViT-S/14 (`16×16×384`) + UL adapter (`16×16×C`) | Joint UL flow prior $v_\theta$ | None; train-only $D_\omega$ |
+| **B** (UL from scratch) | `ul` / `ul_stage2` | Learned UL CNN encoder + fixed $\sigma_0$ (`32×32×8` or `128×128×3`) | Joint UL flow prior $v_\theta$ (or Stage-2 FM) | None; train-only $D_\omega$ |
 
 ---
 
@@ -31,12 +32,16 @@ Evaluated on all 15 MVTec-AD classes under strictly label-free unified modeling 
 | Setup (all label-free `--no-class_cond`) | Image AUROC | Image AP | Pixel AUROC | Pixel AP | Pixel AUPRO | Latency (ms/img) | Speedup |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | **A0 Pixel Baseline** (`128×128×3`, 500/2000 ep, `10×10`) | **94.57%** | **97.85%** | **94.99%** | **60.69%** | **89.16%** | 267.7 ms | 1.0× |
+| **B-lo UL Stage 1** (`sigma0=0.04`, 600 ep, `min`, `t1=0.962`) | 90.89% | 96.55% | 91.58% | 48.21% | 82.17% | 68.3 ms | **3.9×** |
+| **B-lo UL Stage 1** (`sigma0=0.04`, 600 ep, `min`, `t1=1.0`) | 91.95% | **96.88%** | 91.68% | 48.32% | **82.97%** | 66.5 ms | **4.0×** |
 | **B1 UL Stage 1** (`sigma0=0.08`, 600 ep, `min`, `t1=0.926`) | 91.77% | 96.63% | 90.91% | 47.26% | 81.92% | 69.6 ms | **3.8×** |
-| **B1 UL Stage 1** (`min`, `t1=1.0`) | 92.15% | 96.83% | 90.85% | 46.59% | 82.37% | 69.0 ms | **3.9×** |
-| **B1 UL Stage 1** (`mean` = raw UL ELBO) | 91.02% | 96.45% | 91.46% | 48.27% | 81.78% | 69.7 ms | **3.8×** |
-| **B1 UL Stage 1 Fast** (`4×5`) | 90.81% | 96.31% | 90.95% | 47.21% | 80.96% | **34.6 ms** | **7.7×** |
-| **B1 UL Stage 2** (frozen $E_\psi$, 1500 ep uniform FM) | 90.52% | 95.82% | 92.26% | 46.13% | 81.77% | 66.9 ms | **4.0×** |
-| **B1 UL Stage 1 excl. `tile`** *(14/15 classes)* | **93.66%** | 97.52% | **94.06%** | 50.07% | 86.33% | 69.6 ms | **3.8×** |
+| **B1 UL Stage 1** (`sigma0=0.08`, 600 ep, `min`, `t1=1.0`) | **92.15%** | 96.83% | 90.85% | 46.59% | 82.37% | 69.0 ms | **3.9×** |
+| **B1 UL Stage 1** (`sigma0=0.08`, `mean` = raw UL ELBO) | 91.02% | 96.45% | 91.46% | 48.27% | 81.78% | 69.7 ms | **3.8×** |
+| **B1 UL Stage 1 Fast** (`sigma0=0.08`, `4×5`) | 90.81% | 96.31% | 90.95% | 47.21% | 80.96% | **34.6 ms** | **7.7×** |
+| **B1 UL Stage 2** (frozen $E_\psi$, 1500 ep uniform FM) | 90.52% | 95.82% | **92.26%** | 46.13% | 81.77% | 66.9 ms | **4.0×** |
+| **B-hi UL Stage 1** (`sigma0=0.16`, 600 ep, `min`, `t1=0.861`) | 91.42% | 96.57% | 90.50% | 47.28% | 82.05% | 68.0 ms | **3.9×** |
+| **B-hi UL Stage 1** (`sigma0=0.16`, `mean` = raw UL ELBO) | 91.89% | 96.72% | 91.13% | **48.73%** | 82.49% | 66.7 ms | **4.0×** |
+| **B1 UL Stage 1 excl. `tile`** *(14/15 classes)* | **93.66%** | **97.52%** | **94.06%** | **50.07%** | **86.33%** | 69.6 ms | **3.8×** |
 
 ### Visual Comparisons
 
@@ -65,7 +70,8 @@ Evaluated on all 15 MVTec-AD classes under strictly label-free unified modeling 
 Files marked **`[new]`** were added for Unified Latents and latent-space baselines; files marked **`[extended]`** build on [ShengzheC/Flow-Mismatching](https://github.com/ShengzheC/Flow-Mismatching).
 
 ```text
-train.py                           # [extended] pixel, frozen VAE, UL (Stage 1 & 2), and DINOv2+UL training
+Proposal.md                        # [new] Research proposal, hypotheses, and positioning
+train.py                           # [extended] pixel, frozen SD-VAE, and UL (Stage 1 & Stage 2) training
 evaluate.py                        # [extended] 7-metric eval, latency logging, UL bitrate & OOD recon diagnostics
 flow_mismatching/
 ├── scoring.py                     # [extended] channel-agnostic velocity mismatch heatmap, upsampling, t_range
@@ -75,19 +81,17 @@ flow_mismatching/
 ├── optim.py                       # StableAdamW optimizer (upstream)
 ├── utils.py                       # [extended] config-aware checkpointing & UL component loaders
 ├── ul.py                          # [new] UL noise linking (sigma_0 <-> lambda_0 <-> t_1), FM prior ELBO, decoder weights
-├── ul_models.py                   # [new] ULEncoder, DINOULAdapter, train-only ULDiffusionDecoder
-└── encoders.py                    # [new] frozen SD-VAE & DINOv2 wrappers + per-channel Standardizer
+├── ul_models.py                   # [new] ULEncoder and train-only ULDiffusionDecoder
+└── encoders.py                    # [new] frozen SD-VAE wrapper & per-channel Standardizer
 scripts/
-├── precompute_latents.py          # [new] offline fp16 latent caching (sdvae, dinov2, ul_ckpt)
-├── run_phase0_1.sh                # [new] Phase 0–1 runner (A0 pixel baseline, caching, A1 SD-VAE)
-├── run_phase2.sh                  # [new] Phase 2 runner (Setup B UL Stage 1, Stage 2, sigma_0 sweep, OOD diag)
-├── run_phase3.sh                  # [new] Phase 3 runner (Setup C DINOv2+UL adapter & MVTec-LOCO)
+├── precompute_latents.py          # [new] offline fp16 latent caching (sdvae, ul_ckpt)
+├── run_phase0_1.sh                # [new] Phase 0–1 runner (A0 pixel baseline, SD-VAE caching, A1 SD-VAE)
+├── run_phase2.sh                  # [new] Phase 2 runner (Setup B UL Stage 1, Stage 2, sigma_0 sweep, B-128, OOD diag)
 └── run_bitrate_sweep.sh           # [new] detached runner for sigma_0 in {0.04, 0.16}
 tests/
 ├── test_ul.py                     # [new] unit tests for UL ELBO / bitrate equations & noise linking
 ├── test_latent_pipeline.py        # [new] unit tests for latent caching, standardizer, scoring upsampling
-├── test_ul_setup_b.py             # [new] end-to-end smoke tests for Setup B (UL from scratch)
-└── test_ul_setup_c.py             # [new] end-to-end smoke tests for Setup C (DINOv2 + UL adapter)
+└── test_ul_setup_b.py             # [new] end-to-end smoke tests for Setup B (UL from scratch)
 assets/                            # summary result plots
 ```
 
@@ -122,7 +126,7 @@ Organize datasets in the standard MVTec-AD folder layout:
 
 - **MVTec-AD:** Download from the [official website](https://www.mvtec.com/company/research/datasets/mvtec-ad) and extract to `data/mvtec`.
 - **VisA:** Download from [amazon-science/spot-diff](https://github.com/amazon-science/spot-diff) and convert using their `1cls` preparation script to `data/visa/1cls`.
-- **MVTec-LOCO:** Download from the [MVTec-LOCO page](https://www.mvtec.com/company/research/datasets/mvtec-loco) (or via `bash scripts/run_phase3.sh download_loco`) to `data/mvtec_loco`.
+- **MVTec-LOCO:** Download from the [MVTec-LOCO page](https://www.mvtec.com/company/research/datasets/mvtec-loco) to `data/mvtec_loco`.
 
 ---
 
@@ -163,25 +167,20 @@ python evaluate.py \
   --diag_recon --output_dir results/B1_ul_s008_ood_diag
 ```
 
-### 2. Setup A0 (Pixel Baseline), Setup A1 (Frozen SD-VAE), and Setup C (Frozen DINOv2 + UL Adapter)
+### 2. Setup A0 (Pixel Baseline) and Setup A1 (Frozen SD-VAE Baseline)
 
 ```bash
 # A0: Pixel-space Flow Mismatching baseline
 python train.py --dataset mvtec --space pixel --data_root data/mvtec --no-class_cond --output_dir runs/A0_pixel_uni
 
-# Precompute frozen latents for A1 (SD-VAE) or C (DINOv2 ViT-S/14)
-python scripts/precompute_latents.py --encoder sdvae  --data_root data/mvtec --output_dir cache/mvtec_sdvae
-python scripts/precompute_latents.py --encoder dinov2 --data_root data/mvtec --output_dir cache/mvtec_dinov2
+# Precompute frozen SD-VAE latents for A1
+python scripts/precompute_latents.py --encoder sdvae --data_root data/mvtec --output_dir cache/mvtec_sdvae
 
 # A1: Frozen SD-VAE + Flow Mismatching
 python train.py --dataset mvtec --space vae --latent_cache cache/mvtec_sdvae --no-class_cond --epochs 1500 --output_dir runs/A1_vae_uni
-
-# C1: Frozen DINOv2 + trainable UL adapter + Flow Mismatching
-python train.py --dataset mvtec --space ul_dino --latent_cache cache/mvtec_dinov2 \
-  --no-class_cond --ul_sigma0 0.08 --ul_channels 16 --epochs 600 --output_dir runs/C1_ul_dino
 ```
 
-Full reproducible experiment stages are also scripted in `scripts/run_phase0_1.sh`, `scripts/run_phase2.sh`, `scripts/run_phase3.sh`, and `scripts/run_bitrate_sweep.sh`. Override `DATA_ROOT`, `RUNS_DIR`, `RESULTS_DIR`, or `PROJECT_DIR` via environment variables as needed.
+Full reproducible experiment stages are also scripted in `scripts/run_phase0_1.sh`, `scripts/run_phase2.sh`, and `scripts/run_bitrate_sweep.sh`. Override `DATA_ROOT`, `RUNS_DIR`, `RESULTS_DIR`, or `PROJECT_DIR` via environment variables as needed.
 
 ---
 
@@ -212,7 +211,7 @@ If you use this codebase or build on these methods, please cite both foundationa
 - Core anomaly scoring, evaluation metrics, optimizer, and U-Net backbone are built on [ShengzheC/Flow-Mismatching](https://github.com/ShengzheC/Flow-Mismatching) (base commit `2519636`).
 - Unified Latents equations and architecture follow [Heek et al. (2026)](https://arxiv.org/abs/2602.17270).
 - `flow_mismatching/unet.py` is adapted from [facebookresearch/flow_matching](https://github.com/facebookresearch/flow_matching), which builds on [openai/guided-diffusion](https://github.com/openai/guided-diffusion).
-- Frozen latent baselines optionally load pretrained weights from [stabilityai/sd-vae-ft-mse](https://huggingface.co/stabilityai/sd-vae-ft-mse) (`diffusers`) and [facebook/dinov2-small](https://huggingface.co/facebook/dinov2-small) (`transformers`).
+- The optional non-UL latent baseline (`A1`) loads pretrained weights from [stabilityai/sd-vae-ft-mse](https://huggingface.co/stabilityai/sd-vae-ft-mse) (`diffusers`).
 
 ## License
 
