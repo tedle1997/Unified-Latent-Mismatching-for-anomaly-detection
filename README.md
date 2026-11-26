@@ -2,7 +2,7 @@
 
 Unsupervised anomaly detection combining **Unified Latents (UL)** with **Flow Mismatching**: train a UL encoder, $\sigma_0$-linked flow prior, and train-only diffusion decoder **from scratch exclusively on normal images**—without pretrained vision foundation backbones—**discard the decoder at test time**, and score anomalies via velocity discrepancies directly on the compact UL flow prior.
 
-> **Project Proposal:** See [Proposal.md](Proposal.md) for the full research motivation, hypotheses, experimental design, and positioning relative to concurrent work (including Flownomaly).
+> **Project Proposal:** See [Proposal.md](Proposal.md) for the full research motivation, hypotheses, and experimental design.
 >
 > **Provenance:** This codebase builds directly on [ShengzheC/Flow-Mismatching](https://github.com/ShengzheC/Flow-Mismatching) (base commit `2519636`, [arXiv:2605.23070](https://arxiv.org/abs/2605.23070), NeurIPS 2026) and adds a PyTorch implementation of **Unified Latents (UL)** ([Heek et al., 2026, arXiv:2602.17270](https://arxiv.org/abs/2602.17270)) together with a frozen SD-VAE latent baseline and bitrate/ELBO diagnostics.
 
