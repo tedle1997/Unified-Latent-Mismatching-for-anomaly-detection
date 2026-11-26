@@ -12,7 +12,7 @@ evenly spaced inside (t0, t1). H is smoothed with a Gaussian kernel before compu
 """
 
 import math
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -31,12 +31,13 @@ def anomaly_heatmap(
     t_range: Tuple[float, float] = (0.0, 1.0),
     amp_dtype: Optional[torch.dtype] = None,
     generator: Optional[torch.Generator] = None,
+    output_size: Optional[Union[int, Tuple[int, int]]] = None,
 ) -> torch.Tensor:
-    """Pixel-wise velocity mismatch heatmap of a single image.
+    """Pixel-wise velocity mismatch heatmap of a single image or latent map.
 
     Args:
         model: velocity network, called as ``model(x, t, extra={"label": ...})``.
-        image: normalized image of shape [1, C, H, W].
+        image: normalized image or latent tensor of shape [1, C, H, W].
         num_paths: K, the number of Gaussian noise samples (paths).
         num_steps: T, the number of evenly spaced time steps strictly inside ``t_range``.
         power: r in the time weight w(t) = t^r.
@@ -46,9 +47,11 @@ def anomaly_heatmap(
         amp_dtype: autocast dtype for the forward passes on CUDA, None for full precision.
             The mismatch itself is always computed in float32.
         generator: random generator for the noise (the global one if None).
+        output_size: optional (H_out, W_out) or int to bilinearly upsample the [H, W] heatmap
+            before returning (e.g., mapping latent-grid heatmaps to ground-truth mask resolution).
 
     Returns:
-        Heatmap of shape [H, W] in float32.
+        Heatmap of shape [H, W] (or ``output_size``) in float32.
     """
     if image.dim() != 4 or image.shape[0] != 1:
         raise ValueError(f"Expected a single image of shape [1, C, H, W], got {tuple(image.shape)}")
@@ -90,7 +93,12 @@ def anomaly_heatmap(
             mismatch = mismatch.mean(dim=0)
         heat += t.pow(power) * mismatch
 
-    return (heat / num_steps).sqrt()
+    out = (heat / num_steps).sqrt()
+    if output_size is not None:
+        size = (int(output_size), int(output_size)) if isinstance(output_size, int) else (int(output_size[0]), int(output_size[1]))
+        if tuple(out.shape) != size:
+            out = F.interpolate(out[None, None], size=size, mode="bilinear", align_corners=False)[0, 0]
+    return out
 
 
 def gaussian_kernel(ksize: int, sigma: float) -> torch.Tensor:

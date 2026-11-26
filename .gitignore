@@ -3,11 +3,15 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .eggs/
+.pytest_cache/
 build/
 dist/
 .venv/
 venv/
 env/
+
+# Local environment overrides
+env.sh
 
 # Jupyter / IDE
 .ipynb_checkpoints/
@@ -15,11 +19,14 @@ env/
 .idea/
 .DS_Store
 
-# Data, checkpoints and results
+# Data, caches, checkpoints, logs, and results
 data/
+cache/
 runs/
 results/
 outputs/
 *.pt
 *.pth
 *.ckpt
+*.log
+*.pid

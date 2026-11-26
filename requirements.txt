@@ -1,8 +1,17 @@
 torch>=2.3
 torchvision>=0.18
 numpy
+Pillow
 scikit-learn
 scikit-image
 matplotlib
 tqdm
-flow_matching  # only used to generate sample images during training
+flow_matching  # ODE sample generation during training
+
+# Optional: frozen pretrained encoders (--space vae / --space ul_dino) & dataset downloads
+diffusers
+transformers
+huggingface_hub
+
+# Testing
+pytest
