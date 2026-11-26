@@ -1,7 +1,7 @@
 # Unified Latents for Flow Mismatching Anomaly Detection
 
 ## One-line pitch
-Pixel-space Flow Mismatching excels at fine local defects without test-time reconstruction, but struggles on large structural/semantic anomalies and requires 100 full-resolution U-Net forward passes per test image (~268 ms/img). Can **Unified Latents (UL)** trained from scratch on normal images provide a compact, bitrate-controlled latent space whose **jointly trained flow prior directly serves as the test-time Flow Mismatching scorer** (dropping the diffusion decoder at inference)—and how does UL's latent bitrate ($\sigma_0$) govern the trade-off between fine texture defects, large structural anomalies, and inference speed?
+Train **Unified Latents (UL)** from scratch on normal images, drop the decoder at test time, and score anomalies directly on the compact UL flow prior via **Flow Mismatching**—speeding up inference while testing how latent bitrate ($\sigma_0$) trades off fine textures against large structural defects.
 
 ## Background
 - **Flow Mismatching** ([arXiv 2605.23070](https://arxiv.org/abs/2605.23070), NeurIPS 2026; [ShengzheC/Flow-Mismatching](https://github.com/ShengzheC/Flow-Mismatching)) trains a single class-conditional (or label-free unified `--no-class_cond`) Flow Matching U-Net exclusively on normal `128×128×3` images for 2,000 epochs. At test time, it avoids reconstruction and ODE integration by probing the learned velocity field $v_\theta(x_t, t)$ along $K$ straight affine paths $x_t^{(k)} = (1-t)x_0^{(k)} + t y$ across $T$ time steps and aggregating the local squared velocity discrepancy $\|v_\theta(x_t^{(k)}, t) - (y - x_0^{(k)})\|_2^2$ via `min` over paths and $t^r$ time weighting.
