@@ -11,16 +11,16 @@ Unsupervised anomaly detection combining **Unified Latents (UL)** with **Flow Mi
 Pixel-space [Flow Mismatching](https://arxiv.org/abs/2605.23070) detects anomalies without test-time reconstruction or ODE integration by probing a learned velocity field $v_\theta(x_t, t)$ along $K$ straight affine paths and aggregating local squared velocity discrepancies. However, operating in `128×128×3` pixel space requires $K \times T = 100$ full-resolution U-Net forward passes per test image (~268 ms/image on an RTX 4090) and struggles on large structural/semantic anomalies.
 
 We extend Flow Mismatching into latent space using **Unified Latents (UL)**:
-- **Joint training on normal data only:** A deterministic encoder $E_\psi$ produces latents $z_{\text{clean}} = E_\psi(x)$ with fixed base noise $\sigma_0$ ($\lambda_0 = \log((1 - \sigma_0^2)/\sigma_0^2)$), regularized by an exact Flow-Matching prior ELBO on $t \in (0, t_1)$ with $t_1 = \operatorname{sigmoid}(\lambda_0 / 2)$, while a lightweight diffusion decoder $D_\omega$ reconstructs pixels via UL's sigmoid-weighted loss.
-- **Decoder-free test-time scoring:** At inference, $D_\omega$ is discarded. Test images are encoded once ($z = E_\psi(y)$) and scored directly on the compact latent flow prior $v_\theta$ using Flow Mismatching (`--aggregation min`) or raw UL prior ELBO (`--aggregation mean`), achieving **3.8×–7.7× faster inference**.
+- **Joint training on normal data only:** A deterministic encoder $E_\psi$ produces latents $z_{\text{clean}} = E_\psi(x)$ with fixed base noise $\sigma_0$ and log-SNR $\lambda_0 = \log\frac{1 - \sigma_0^2}{\sigma_0^2}$, regularized by an exact Flow-Matching prior ELBO on $t \in (0, t_1)$ with $t_1 = \mathrm{sigmoid}(\lambda_0 / 2)$, while a lightweight diffusion decoder $D_\omega$ reconstructs pixels via UL's sigmoid-weighted loss.
+- **Decoder-free test-time scoring:** At inference, $D_\omega$ is discarded. Test images are encoded once as $z = E_\psi(y)$ and scored directly on the compact latent flow prior $v_\theta$ using Flow Mismatching (`--aggregation min`) or raw UL prior ELBO (`--aggregation mean`), achieving **3.8×–7.7× faster inference**.
 - **Controlled comparisons:** Supports four unified modeling spaces (`--space`) under the exact same scoring engine and 7-metric evaluation harness:
 
 | Setup | `--space` | Latent Representation | Flow Prior | Test-Time Decoder |
 | --- | --- | --- | --- | --- |
 | **A0** (Baseline) | `pixel` | Pixel space (`128×128×3`) | 6-stage U-Net | None |
 | **A1** (Frozen VAE) | `vae` | Frozen SD-VAE (`32×32×4`, standardized) | 3-stage latent U-Net | None |
-| **B** (UL from scratch) | `ul` / `ul_stage2` | Learned UL encoder + fixed $\sigma_0$ (`32×32×8`) | Joint UL flow prior $v_\theta$ (or Stage-2 FM) | None (train-only $D_\omega$) |
-| **C** (Semantic UL) | `ul_dino` | Frozen DINOv2 ViT-S/14 (`16×16×384`) + UL adapter (`16×16×C`) | Joint UL flow prior $v_\theta$ | None (train-only $D_\omega$) |
+| **B** (UL from scratch) | `ul` / `ul_stage2` | Learned UL encoder + fixed $\sigma_0$ (`32×32×8`) | Joint UL flow prior $v_\theta$ (or Stage-2 FM) | None; train-only $D_\omega$ |
+| **C** (Semantic UL) | `ul_dino` | Frozen DINOv2 ViT-S/14 (`16×16×384`) + UL adapter (`16×16×C`) | Joint UL flow prior $v_\theta$ | None; train-only $D_\omega$ |
 
 ---
 
@@ -31,7 +31,7 @@ Evaluated on all 15 MVTec-AD classes under strictly label-free unified modeling 
 | Setup (all label-free `--no-class_cond`) | Image AUROC | Image AP | Pixel AUROC | Pixel AP | Pixel AUPRO | Latency (ms/img) | Speedup |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | **A0 Pixel Baseline** (`128×128×3`, 500/2000 ep, `10×10`) | **94.57%** | **97.85%** | **94.99%** | **60.69%** | **89.16%** | 267.7 ms | 1.0× |
-| **B1 UL Stage 1** ($\sigma_0=0.08$, 600 ep, `min`, `t1=0.926`) | 91.77% | 96.63% | 90.91% | 47.26% | 81.92% | 69.6 ms | **3.8×** |
+| **B1 UL Stage 1** (`sigma0=0.08`, 600 ep, `min`, `t1=0.926`) | 91.77% | 96.63% | 90.91% | 47.26% | 81.92% | 69.6 ms | **3.8×** |
 | **B1 UL Stage 1** (`min`, `t1=1.0`) | 92.15% | 96.83% | 90.85% | 46.59% | 82.37% | 69.0 ms | **3.9×** |
 | **B1 UL Stage 1** (`mean` = raw UL ELBO) | 91.02% | 96.45% | 91.46% | 48.27% | 81.78% | 69.7 ms | **3.8×** |
 | **B1 UL Stage 1 Fast** (`4×5`) | 90.81% | 96.31% | 90.95% | 47.21% | 80.96% | **34.6 ms** | **7.7×** |
@@ -96,8 +96,8 @@ assets/                            # summary result plots
 ## Installation
 
 ```bash
-git clone <your-repo-url>
-cd unified-latents-flow-mismatching
+git clone https://github.com/tedle1997/Unified-Latent-Mismatching-for-anomaly-detection.git
+cd Unified-Latent-Mismatching-for-anomaly-detection
 pip install -r requirements.txt  # Python 3.9+, PyTorch 2.3+
 ```
 
