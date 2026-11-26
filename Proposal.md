@@ -1,14 +1,5 @@
 # Unified Latents for Flow Mismatching Anomaly Detection
 
-| Field | Value |
-| --- | --- |
-| Summary | Replace pixel-space Flow Matching in **Flow Mismatching** (`ShengzheC/Flow-Mismatching`) with **Unified Latents (UL)** trained from scratch on normal data only—without pretrained vision foundation backbones—discarding the UL diffusion decoder at test time and scoring images via velocity discrepancies of the **UL flow prior** directly in latent space, while sweeping UL's noise boundary $\sigma_0$ (latent bitrate) and spatial resolution. |
-| Status | Proposed |
-| Feasibility | High |
-| Key references | Flow Mismatching arXiv 2605.23070 (NeurIPS 2026); Unified Latents (UL) arXiv 2602.17270; DiAD 2404.06008; UniAD 2206.03687; MambaAD 2404.06564 |
-| Novelty | No prior work combines **Unified Latents** (learned encoder + linked noise boundary $\sigma_0$ + joint ELBO flow prior + train-only diffusion decoder) with **Flow Mismatching** velocity-discrepancy anomaly detection. We learn a compact, bitrate-controlled 2D latent space purely from normal images under unified label-free modeling (`--no-class_cond`). Crucially, UL's prior ELBO naturally bridges to Flow Mismatching's velocity discrepancy, enabling a direct comparison between raw ELBO (`mean`) and Flow Mismatching (`min`) on the exact same latent prior. |
-| Main risks | A UL encoder trained from scratch only on normal images may project anomalous test patches onto the normal latent manifold (diagnosed via normal vs. anomalous decoder PSNR and compared against a frozen pretrained VAE); 4×–8× spatial downsampling can blur tiny 1–3 px defects (disentangled by sweeping $\sigma_0$ and testing full-resolution `128×128` UL without spatial downsampling). |
-
 ## One-line pitch
 Pixel-space Flow Mismatching excels at fine local defects without test-time reconstruction, but struggles on large structural/semantic anomalies and requires 100 full-resolution U-Net forward passes per test image (~268 ms/img). Can **Unified Latents (UL)** trained from scratch on normal images provide a compact, bitrate-controlled latent space whose **jointly trained flow prior directly serves as the test-time Flow Mismatching scorer** (dropping the diffusion decoder at inference)—and how does UL's latent bitrate ($\sigma_0$) govern the trade-off between fine texture defects, large structural anomalies, and inference speed?
 
